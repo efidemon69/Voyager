@@ -21,6 +21,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
 
     // since we replaced bootmgfw on disk, we are going to need to restore the image back
     // this is simply just moving bootmgfw.efi.backup to bootmgfw.efi...
+    // x64-86
     if (EFI_ERROR((Result = RestoreBootMgfw())))
     {
         Print(L"unable to restore bootmgfw... reason -> %r\n", Result);
