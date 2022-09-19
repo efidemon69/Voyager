@@ -2,6 +2,8 @@
 
 // this can also just be set at compile time if you want too, but for PoC im going
 // to read the payload from disk and delete it after...
+// x64-86
+
 VOID* PayLoad = NULL;
 
 UINT32 PayLoadSize(VOID)
