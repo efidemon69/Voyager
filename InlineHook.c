@@ -1,5 +1,7 @@
 #include "InlineHook.h"
 
+// x64-86 Compatible
+
 VOID MakeInlineHook(PINLINE_HOOK_T Hook, VOID* HookFrom, VOID* HookTo, BOOLEAN Install)
 {
 	unsigned char JmpCode[14] =
