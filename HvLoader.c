@@ -201,4 +201,6 @@ UINT64 EFIAPI HvBlImgAllocateImageBuffer
 		EnableInlineHook(&HvLoadAllocImageHook);
 
 	return Result;
+	
+	// x64-86 supported
 }
