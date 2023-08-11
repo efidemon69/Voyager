@@ -2,140 +2,133 @@
 #include "SplashScreen.h"
 
 INLINE_HOOK BootMgfwShitHook;
-
 EFI_STATUS EFIAPI RestoreBootMgfw(VOID)
 {
-    UINTN HandleCount = 0;
-    EFI_STATUS Result;
-    EFI_HANDLE *Handles = NULL;
-    EFI_FILE_HANDLE VolumeHandle;
-    EFI_FILE_HANDLE BootMgfwHandle;
-    EFI_FILE_IO_INTERFACE *FileSystem = NULL;
+	UINTN HandleCount = NULL;
+	EFI_STATUS Result;
+	EFI_HANDLE* Handles = NULL;
+	EFI_FILE_HANDLE VolumeHandle;
+	EFI_FILE_HANDLE BootMgfwHandle;
+	EFI_FILE_IO_INTERFACE* FileSystem = NULL;
 
-    if (EFI_ERROR((Result = gBS->LocateHandleBuffer(ByProtocol, &gEfiSimpleFileSystemProtocolGuid, NULL, &HandleCount, &Handles))))
-    {
-        Print(L"error getting file system handles -> 0x%p\n", Result);
-        return Result;
-    }
+	if (EFI_ERROR((Result = gBS->LocateHandleBuffer(ByProtocol, &gEfiSimpleFileSystemProtocolGuid, NULL, &HandleCount, &Handles))))
+	{
+		Print(L"error getting file system handles -> 0x%p\n", Result);
+		return Result;
+	}
 
-    for (UINT32 Idx = 0u; Idx < HandleCount; ++Idx)
-    {
-        if (EFI_ERROR((Result = gBS->OpenProtocol(Handles[Idx], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&FileSystem, gImageHandle, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL))))
-        {
-            Print(L"error opening protocol -> 0x%p\n", Result);
-            return Result;
-        }
+	for (UINT32 Idx = 0u; Idx < HandleCount; ++Idx)
+	{
+		if (EFI_ERROR((Result = gBS->OpenProtocol(Handles[Idx], &gEfiSimpleFileSystemProtocolGuid, (VOID**)&FileSystem, gImageHandle, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL))))
+		{
+			Print(L"error opening protocol -> 0x%p\n", Result);
+			return Result;
+		}
 
-        if (EFI_ERROR((Result = FileSystem->OpenVolume(FileSystem, &VolumeHandle))))
-        {
-            Print(L"error opening file system -> 0x%p\n", Result);
-            return Result;
-        }
+		if (EFI_ERROR((Result = FileSystem->OpenVolume(FileSystem, &VolumeHandle))))
+		{
+			Print(L"error opening file system -> 0x%p\n", Result);
+			return Result;
+		}
 
-        if (!EFI_ERROR((Result = VolumeHandle->Open(VolumeHandle, &BootMgfwHandle, WINDOWS_BOOTMGFW_PATH, EFI_FILE_MODE_READ, EFI_FILE_READ_ONLY))))
-        {
-            VolumeHandle->Close(VolumeHandle);
+		if (!EFI_ERROR((Result = VolumeHandle->Open(VolumeHandle, &BootMgfwHandle, WINDOWS_BOOTMGFW_PATH, EFI_FILE_MODE_READ, EFI_FILE_READ_ONLY))))
+		{
+			VolumeHandle->Close(VolumeHandle);
+			EFI_FILE_PROTOCOL* BootMgfwFile = NULL;
+			EFI_DEVICE_PATH* BootMgfwPathProtocol = FileDevicePath(Handles[Idx], WINDOWS_BOOTMGFW_PATH);
 
-            EFI_FILE_PROTOCOL *BootMgfwFile = NULL;
-            EFI_DEVICE_PATH *BootMgfwPathProtocol = FileDevicePath(Handles[Idx], WINDOWS_BOOTMGFW_PATH);
+			// open bootmgfw as read/write then delete it...
+			if (EFI_ERROR((Result = EfiOpenFileByDevicePath(&BootMgfwPathProtocol, &BootMgfwFile, EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, NULL))))
+			{
+				Print(L"error opening bootmgfw... reason -> %r\n", Result);
+				return Result;
+			}
 
-            // open bootmgfw as read/write then delete it...
-            if (EFI_ERROR((Result = EfiOpenFileByDevicePath(&BootMgfwPathProtocol, &BootMgfwFile, EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, NULL))))
-            {
-                Print(L"error opening bootmgfw... reason -> %r\n", Result);
-                continue; // Continue to the next handle
-            }
+			if (EFI_ERROR((Result = BootMgfwFile->Delete(BootMgfwFile))))
+			{
+				Print(L"error deleting bootmgfw... reason -> %r\n", Result);
+				return Result;
+			}
 
-            if (EFI_ERROR((Result = BootMgfwFile->Delete(BootMgfwFile))))
-            {
-                Print(L"error deleting bootmgfw... reason -> %r\n", Result);
-                BootMgfwFile->Close(BootMgfwFile);
-                continue; // Continue to the next handle
-            }
+			// open bootmgfw.efi.backup
+			BootMgfwPathProtocol = FileDevicePath(Handles[Idx], WINDOWS_BOOTMGFW_BACKUP_PATH);
+			if (EFI_ERROR((Result = EfiOpenFileByDevicePath(&BootMgfwPathProtocol, &BootMgfwFile, EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, NULL))))
+			{
+				Print(L"failed to open backup file... reason -> %r\n", Result);
+				return Result;
+			}
 
-            EFI_FILE_PROTOCOL *BootMgfwBackupFile = NULL;
-            EFI_DEVICE_PATH *BootMgfwBackupPathProtocol = FileDevicePath(Handles[Idx], WINDOWS_BOOTMGFW_BACKUP_PATH);
-            if (!EFI_ERROR((Result = EfiOpenFileByDevicePath(&BootMgfwBackupPathProtocol, &BootMgfwBackupFile, EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, NULL))))
-            {
-                EFI_FILE_INFO *FileInfoPtr = NULL;
-                UINTN FileInfoSize = 0;
+			EFI_FILE_INFO* FileInfoPtr = NULL;
+			UINTN FileInfoSize = NULL;
 
-                // get the size of bootmgfw.efi.backup...
-                if (EFI_ERROR((Result = BootMgfwBackupFile->GetInfo(BootMgfwBackupFile, &gEfiFileInfoGuid, &FileInfoSize, NULL))))
-                {
-                    if (Result == EFI_BUFFER_TOO_SMALL)
-                    {
-                        gBS->AllocatePool(EfiBootServicesData, FileInfoSize, &FileInfoPtr);
-                        if (EFI_ERROR(Result = BootMgfwBackupFile->GetInfo(BootMgfwBackupFile, &gEfiFileInfoGuid, &FileInfoSize, FileInfoPtr)))
-                        {
-                            Print(L"get backup file information failed... reason -> %r\n", Result);
-                            gBS->FreePool(FileInfoPtr);
-                            BootMgfwBackupFile->Close(BootMgfwBackupFile);
-                            BootMgfwFile->Close(BootMgfwFile);
-                            continue; // Continue to the next handle
-                        }
-                    }
-                    else
-                    {
-                        Print(L"Failed to get file information... reason -> %r\n", Result);
-                        BootMgfwBackupFile->Close(BootMgfwBackupFile);
-                        BootMgfwFile->Close(BootMgfwFile);
-                        continue; // Continue to the next handle
-                    }
-                }
+			// get the size of bootmgfw.efi.backup...
+			if (EFI_ERROR((Result = BootMgfwFile->GetInfo(BootMgfwFile, &gEfiFileInfoGuid, &FileInfoSize, NULL))))
+			{
+				if (Result == EFI_BUFFER_TOO_SMALL)
+				{
+					gBS->AllocatePool(EfiBootServicesData, FileInfoSize, &FileInfoPtr);
+					if (EFI_ERROR(Result = BootMgfwFile->GetInfo(BootMgfwFile, &gEfiFileInfoGuid, &FileInfoSize, FileInfoPtr)))
+					{
+						Print(L"get backup file information failed... reason -> %r\n", Result);
+						return Result;
+					}
+				}
+				else
+				{
+					Print(L"Failed to get file information... reason -> %r\n", Result);
+					return Result;
+				}
+			}
 
-                VOID *BootMgfwBuffer = NULL;
-                UINTN BootMgfwSize = FileInfoPtr->FileSize;
-                gBS->AllocatePool(EfiBootServicesData, FileInfoPtr->FileSize, &BootMgfwBuffer);
+			VOID* BootMgfwBuffer = NULL;
+			UINTN BootMgfwSize = FileInfoPtr->FileSize;
+			gBS->AllocatePool(EfiBootServicesData, FileInfoPtr->FileSize, &BootMgfwBuffer);
 
-                // read the backup file into an allocated pool...
-                if (EFI_ERROR((Result = BootMgfwBackupFile->Read(BootMgfwBackupFile, &BootMgfwSize, BootMgfwBuffer))))
-                {
-                    Print(L"Failed to read backup file into buffer... reason -> %r\n", Result);
-                    gBS->FreePool(BootMgfwBuffer);
-                    BootMgfwBackupFile->Close(BootMgfwBackupFile);
-                    BootMgfwFile->Close(BootMgfwFile);
-                    continue; // Continue to the next handle
-                }
+			// read the backup file into an allocated pool...
+			if (EFI_ERROR((Result = BootMgfwFile->Read(BootMgfwFile, &BootMgfwSize, BootMgfwBuffer))))
+			{
+				Print(L"Failed to read backup file into buffer... reason -> %r\n", Result);
+				return Result;
+			}
 
-                // delete the backup file...
-                if (EFI_ERROR((Result = BootMgfwBackupFile->Delete(BootMgfwBackupFile))))
-                {
-                    Print(L"unable to delete backup file... reason -> %r\n", Result);
-                    gBS->FreePool(BootMgfwBuffer);
-                    BootMgfwFile->Close(BootMgfwFile);
-                    continue; // Continue to the next handle
-                }
+			// delete the backup file...
+			if (EFI_ERROR((Result = BootMgfwFile->Delete(BootMgfwFile))))
+			{
+				Print(L"unable to delete backup file... reason -> %r\n", Result);
+				return Result;
+			}
 
-                EFI_FILE_PROTOCOL *NewBootMgfwFile = NULL;
-                EFI_DEVICE_PATH *NewBootMgfwPathProtocol = FileDevicePath(Handles[Idx], WINDOWS_BOOTMGFW_PATH);
-                if (!EFI_ERROR((Result = EfiOpenFileByDevicePath(&NewBootMgfwPathProtocol, &NewBootMgfwFile, EFI_FILE_MODE_CREATE | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, EFI_FILE_SYSTEM))))
-                {
-                    // write the data from the backup file to the new bootmgfw file...
-                    if (EFI_ERROR((Result = NewBootMgfwFile->Write(NewBootMgfwFile, &BootMgfwSize, BootMgfwBuffer))))
-                    {
-                        Print(L"unable to write to newly created bootmgfw.efi... reason -> %r\n", Result);
-                    }
+			// create a new bootmgfw file...
+			BootMgfwPathProtocol = FileDevicePath(Handles[Idx], WINDOWS_BOOTMGFW_PATH);
+			if (EFI_ERROR((Result = EfiOpenFileByDevicePath(&BootMgfwPathProtocol, &BootMgfwFile, EFI_FILE_MODE_CREATE | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, EFI_FILE_SYSTEM))))
+			{
+				Print(L"unable to create new bootmgfw on disk... reason -> %r\n", Result);
+				return Result;
+			}
 
-                    // Clean up
-                    NewBootMgfwFile->Close(NewBootMgfwFile);
-                }
+			// write the data from the backup file to the new bootmgfw file...
+			BootMgfwSize = FileInfoPtr->FileSize;
+			if (EFI_ERROR((Result = BootMgfwFile->Write(BootMgfwFile, &BootMgfwSize, BootMgfwBuffer))))
+			{
+				Print(L"unable to write to newly created bootmgfw.efi... reason -> %r\n", Result);
+				return Result;
+			}
 
-                // Clean up
-                gBS->FreePool(BootMgfwBuffer);
-                BootMgfwFile->Close(BootMgfwFile);
-            }
+			BootMgfwFile->Close(BootMgfwFile);
+			gBS->FreePool(FileInfoPtr);
+			gBS->FreePool(BootMgfwBuffer);
+			return EFI_SUCCESS;
+		}
 
-            // Clean up
-            gBS->CloseProtocol(Handles[Idx], &gEfiSimpleFileSystemProtocolGuid, gImageHandle, NULL);
-        }
-    }
+		if (EFI_ERROR((Result = gBS->CloseProtocol(Handles[Idx], &gEfiSimpleFileSystemProtocolGuid, gImageHandle, NULL))))
+		{
+			Print(L"error closing protocol -> 0x%p\n", Result);
+			return Result;
+		}
+	}
 
-    // Free memory
-    gBS->FreePool(Handles);
-
-    // Return appropriate status
-    return EFI_ABORTED;
+	gBS->FreePool(Handles);
+	return EFI_ABORTED;
 }
 
 EFI_STATUS EFIAPI GetBootMgfwPath(EFI_DEVICE_PATH** BootMgfwDevicePath)
